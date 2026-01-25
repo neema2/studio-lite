@@ -179,23 +179,35 @@ function App() {
     }
   }, [isConnected]);
 
-  // Apply diagnostics to editor
+  // Apply diagnostics to editor - use window.monaco which is the same instance @monaco-editor/react uses
   useEffect(() => {
-    if (!editorRef.current) return;
+    // Use setTimeout to ensure Monaco model is fully ready
+    const timeoutId = setTimeout(() => {
+      // Must use window.monaco - the @monaco-editor/react package uses a different instance
+      // than the one we import directly from 'monaco-editor'
+      const monacoInstance = (window as any).monaco;
+      if (!monacoInstance) return;
 
-    const monacoModel = editorRef.current.getModel();
-    if (!monacoModel) return;
+      const editors = monacoInstance.editor.getEditors();
+      if (editors.length === 0) return;
 
-    const markers: monaco.editor.IMarkerData[] = diagnostics.map(d => ({
-      severity: d.severity === 1 ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
-      message: d.message,
-      startLineNumber: d.range.start.line + 1,
-      startColumn: d.range.start.character + 1,
-      endLineNumber: d.range.end.line + 1,
-      endColumn: d.range.end.character + 1,
-    }));
+      const editor = editors[0];
+      const monacoModel = editor.getModel();
+      if (!monacoModel) return;
 
-    monaco.editor.setModelMarkers(monacoModel, 'pure', markers);
+      const markers = diagnostics.map((d: Diagnostic) => ({
+        severity: d.severity === 1 ? monacoInstance.MarkerSeverity.Error : monacoInstance.MarkerSeverity.Warning,
+        message: d.message,
+        startLineNumber: d.range.start.line + 1,
+        startColumn: d.range.start.character + 1,
+        endLineNumber: d.range.end.line + 1,
+        endColumn: d.range.end.character + 1,
+      }));
+
+      monacoInstance.editor.setModelMarkers(monacoModel, 'pure-lsp', markers);
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
   }, [diagnostics]);
 
   const handleEditorMount: OnMount = useCallback((editor) => {
@@ -292,11 +304,44 @@ function App() {
           </div>
           <Editor
             height="100%"
-            defaultLanguage="typescript"
+            defaultLanguage="pure"
             theme="vs-dark"
             value={model}
             onChange={handleModelChange}
             onMount={handleEditorMount}
+            beforeMount={(monaco) => {
+              // Register Pure language if not already registered
+              if (!monaco.languages.getLanguages().some((l: { id: string }) => l.id === 'pure')) {
+                monaco.languages.register({ id: 'pure' });
+                // Basic Pure syntax highlighting
+                monaco.languages.setMonarchTokensProvider('pure', {
+                  tokenizer: {
+                    root: [
+                      [/\/\/.*/, 'comment'],
+                      [/\/\*/, 'comment', '@comment'],
+                      [/\b(Class|Database|Mapping|Association|Enum|Profile|Runtime|Service|function)\b/, 'keyword'],
+                      [/\b(RelationalDatabaseConnection|Relational)\b/, 'keyword'],
+                      [/\b(Table|Join|View)\b/, 'keyword.table'],
+                      [/\b(String|Integer|Float|Boolean|Date|DateTime|StrictDate|Decimal|Number)\b/, 'type'],
+                      [/\b(true|false)\b/, 'keyword.constant'],
+                      [/\b(filter|project|groupBy|all|map|extends|let)\b/, 'function'],
+                      [/-\>/, 'operator.arrow'],
+                      [/::/, 'operator.scope'],
+                      [/[a-zA-Z_]\w*/, 'identifier'],
+                      [/'[^']*'/, 'string'],
+                      [/"[^"]*"/, 'string'],
+                      [/\d+/, 'number'],
+                      [/[\[\]{}()]/, 'delimiter.bracket'],
+                    ],
+                    comment: [
+                      [/[^\/*]+/, 'comment'],
+                      [/\*\//, 'comment', '@pop'],
+                      [/./, 'comment'],
+                    ],
+                  },
+                });
+              }
+            }}
             options={{
               minimap: { enabled: false },
               fontSize: 13,
