@@ -1,12 +1,13 @@
 /**
- * LSP HTTP Client for Legend-Lite backend.
+ * Legend-Lite HTTP Client.
  * 
- * Communicates with the LspHttpAdapter endpoints:
+ * Communicates with the LegendHttpServer endpoints:
  * - POST /lsp - LSP JSON-RPC messages
- * - POST /lsp/execute - Execute Pure code
+ * - POST /engine/execute - Execute Pure code queries
+ * - POST /engine/sql - Execute raw SQL queries
  */
 
-const LSP_BASE_URL = 'http://localhost:8081';
+const BASE_URL = 'http://localhost:8080';
 
 export interface Diagnostic {
   range: {
@@ -20,29 +21,26 @@ export interface Diagnostic {
 
 export interface ExecuteResult {
   success: boolean;
-  result?: string;
+  data?: string;
+  columns?: string[];
+  rowCount?: number;
   error?: string;
-}
-
-export interface ParsedExecuteResult {
-  sql: string;
-  plan: string;
 }
 
 /**
  * Send an LSP JSON-RPC message and get the response.
  */
 export async function sendLspMessage(message: object): Promise<object | null> {
-  const response = await fetch(`${LSP_BASE_URL}/lsp`, {
+  const response = await fetch(`${BASE_URL}/lsp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(message),
   });
-  
+
   if (response.status === 204) {
     return null; // Notification, no response
   }
-  
+
   return response.json();
 }
 
@@ -60,14 +58,14 @@ export async function initializeLsp(): Promise<object> {
       capabilities: {},
     },
   });
-  
+
   // Send initialized notification
   await sendLspMessage({
     jsonrpc: '2.0',
     method: 'initialized',
     params: {},
   });
-  
+
   return response || {};
 }
 
@@ -87,7 +85,7 @@ export async function didOpen(uri: string, text: string): Promise<Diagnostic[]> 
       },
     },
   });
-  
+
   return parseDiagnostics(response);
 }
 
@@ -103,20 +101,38 @@ export async function didChange(uri: string, text: string, version: number): Pro
       contentChanges: [{ text }],
     },
   });
-  
+
   return parseDiagnostics(response);
 }
 
 /**
- * Execute Pure code.
+ * Execute Pure code query via /engine/execute.
  */
 export async function executeCode(code: string): Promise<ExecuteResult> {
-  const response = await fetch(`${LSP_BASE_URL}/lsp/execute`, {
+  const response = await fetch(`${BASE_URL}/engine/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
   });
-  
+
+  return response.json();
+}
+
+/**
+ * Execute raw SQL via /engine/sql.
+ * Requires the Pure model code, SQL query, and runtime name.
+ */
+export async function executeSql(
+  code: string,
+  sql: string,
+  runtime: string
+): Promise<ExecuteResult> {
+  const response = await fetch(`${BASE_URL}/engine/sql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, sql, runtime }),
+  });
+
   return response.json();
 }
 
@@ -125,7 +141,7 @@ export async function executeCode(code: string): Promise<ExecuteResult> {
  */
 function parseDiagnostics(response: object | null): Diagnostic[] {
   if (!response) return [];
-  
+
   const resp = response as { params?: { diagnostics?: Diagnostic[] } };
   return resp.params?.diagnostics || [];
 }
@@ -135,7 +151,7 @@ function parseDiagnostics(response: object | null): Diagnostic[] {
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${LSP_BASE_URL}/health`);
+    const response = await fetch(`${BASE_URL}/health`);
     return response.ok;
   } catch {
     return false;
