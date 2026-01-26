@@ -80,8 +80,17 @@ RelationalDatabaseConnection store::TestConnection
 // ========== Runtime ==========
 Runtime test::TestRuntime
 {
-    mappings: [ model::PersonMapping ];
-    connections: [ PersonDatabase: store::TestConnection ];
+    mappings:
+    [
+        model::PersonMapping
+    ];
+    connections:
+    [
+        PersonDatabase:
+        [
+            environment: store::TestConnection
+        ]
+    ];
 }
 `;
 
@@ -108,33 +117,57 @@ const DEFAULT_PURE_QUERIES = [
 // Pre-populated SQL statements for testing
 const DEFAULT_SQL_STATEMENTS = [
   {
-    name: '1. Create Table',
+    name: '1. Create Tables',
     sql: `CREATE TABLE T_PERSON (
     ID INTEGER PRIMARY KEY,
     FIRST_NAME VARCHAR(100),
     LAST_NAME VARCHAR(100),
     AGE_VAL INTEGER
-)`
+);
+
+CREATE TABLE T_ADDRESS (
+    ID INTEGER PRIMARY KEY,
+    PERSON_ID INTEGER NOT NULL,
+    STREET VARCHAR(200),
+    CITY VARCHAR(100)
+);`
   },
   {
-    name: '2. Insert Data',
+    name: '2. Insert Person Data',
     sql: `INSERT INTO T_PERSON VALUES (1, 'John', 'Smith', 30);
 INSERT INTO T_PERSON VALUES (2, 'Jane', 'Doe', 25);
 INSERT INTO T_PERSON VALUES (3, 'Bob', 'Wilson', 45);`
   },
   {
-    name: '3. Select All',
+    name: '3. Insert Address Data',
+    sql: `INSERT INTO T_ADDRESS VALUES (1, 1, '123 Main St', 'New York');
+INSERT INTO T_ADDRESS VALUES (2, 1, '456 Oak Ave', 'Boston');
+INSERT INTO T_ADDRESS VALUES (3, 2, '789 Pine Rd', 'Chicago');`
+  },
+  {
+    name: '4. Select All Persons',
     sql: `SELECT * FROM T_PERSON`
   },
   {
-    name: '4. Select with Filter',
+    name: '5. Select All Addresses',
+    sql: `SELECT * FROM T_ADDRESS`
+  },
+  {
+    name: '6. Join Person + Address',
+    sql: `SELECT p.FIRST_NAME, p.LAST_NAME, a.STREET, a.CITY
+FROM T_PERSON p
+JOIN T_ADDRESS a ON p.ID = a.PERSON_ID`
+  },
+  {
+    name: '7. Select with Filter',
     sql: `SELECT FIRST_NAME, LAST_NAME, AGE_VAL 
 FROM T_PERSON 
 WHERE AGE_VAL > 25`
   },
   {
-    name: '5. Drop Table',
-    sql: `DROP TABLE IF EXISTS T_PERSON`
+    name: '8. Drop Tables',
+    sql: `DROP TABLE IF EXISTS T_ADDRESS;
+DROP TABLE IF EXISTS T_PERSON;`
   }
 ];
 
@@ -285,7 +318,13 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Legend Studio Lite</h1>
+        <div className="header-brand">
+          <span className="header-logo">↰</span>
+          <h1>
+            <span className="brand-legend">LEGEND</span>
+            <span className="brand-studio"> Studio Lite</span>
+          </h1>
+        </div>
         <div className="status">
           <span className={`indicator ${isConnected ? 'connected' : 'disconnected'}`} />
           {isConnected ? 'Connected' : 'Disconnected'}
