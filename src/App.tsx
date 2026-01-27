@@ -192,10 +192,13 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [modelStatus, setModelStatus] = useState<'idle' | 'valid' | 'error'>('idle');
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  const [queryDiagnostics, setQueryDiagnostics] = useState<Diagnostic[]>([]);
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const queryEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const versionRef = useRef(1);
   const debounceRef = useRef<number | null>(null);
+  const queryDebounceRef = useRef<number | null>(null);
 
   // Check backend connection on mount
   useEffect(() => {
@@ -243,8 +246,37 @@ function App() {
     return () => clearTimeout(timeoutId);
   }, [diagnostics]);
 
+  // Apply query diagnostics to the query editor
+  useEffect(() => {
+    if (!queryEditorRef.current) return;
+
+    const monacoInstance = (window as any).monaco;
+    if (!monacoInstance) return;
+
+    const queryModel = queryEditorRef.current.getModel();
+    if (!queryModel) return;
+
+    console.log('Applying query diagnostics:', queryDiagnostics.length);
+
+    const markers = queryDiagnostics.map((d: Diagnostic) => ({
+      severity: d.severity === 1 ? monacoInstance.MarkerSeverity.Error : monacoInstance.MarkerSeverity.Warning,
+      message: d.message,
+      startLineNumber: d.range.start.line + 1,
+      startColumn: d.range.start.character + 1,
+      endLineNumber: d.range.end.line + 1,
+      endColumn: d.range.end.character + 1,
+    }));
+
+    monacoInstance.editor.setModelMarkers(queryModel, 'pure-query-lsp', markers);
+  }, [queryDiagnostics]);
+
+
   const handleEditorMount: OnMount = useCallback((editor) => {
     editorRef.current = editor;
+  }, []);
+
+  const handleQueryEditorMount: OnMount = useCallback((editor) => {
+    queryEditorRef.current = editor;
   }, []);
 
   const handleModelChange = useCallback((value: string | undefined) => {
@@ -269,6 +301,81 @@ function App() {
       }
     }, 300);
   }, [isConnected]);
+
+  // Handle Pure query changes with combined validation
+  const handleQueryChange = useCallback((value: string | undefined) => {
+    const newQuery = value || '';
+    setPureQuery(newQuery);
+
+    // Debounce query validation
+    if (queryDebounceRef.current) {
+      clearTimeout(queryDebounceRef.current);
+    }
+
+    queryDebounceRef.current = window.setTimeout(async () => {
+      if (isConnected && newQuery.trim()) {
+        // Calculate line counts
+        const modelLineCount = model.split('\n').length;
+
+        // Wrap query in a function definition so the LSP can validate it
+        // The query expression becomes the body of a validation function
+        const wrappedQuery = `function validation::query(): Any[*] { ${newQuery} }`;
+        const combinedDoc = model + '\n\n' + wrappedQuery;
+
+        // The function wrapper adds 1 line, query content starts after "{ "
+        const queryWrapperLine = modelLineCount + 2; // function line
+
+        console.log('[QueryValidation] Model lines:', modelLineCount);
+        console.log('[QueryValidation] Wrapped query:', wrappedQuery.substring(0, 80));
+
+        try {
+          versionRef.current++;
+          const diags = await didChange(DOCUMENT_URI, combinedDoc, versionRef.current);
+
+          console.log('[QueryValidation] All diagnostics:', diags);
+
+          // Filter diagnostics to those in the function wrapper region (query wrapped in function)
+          // The function is: "function validation::query(): Any[*] { QUERY_HERE }"
+          // So diagnostics on line queryWrapperLine with character > 43 are from the query
+          const funcPrefix = 'function validation::query(): Any[*] { '.length;
+
+          console.log('[QueryValidation] Query wrapper line:', queryWrapperLine, 'func prefix:', funcPrefix);
+
+          const queryDiags = diags
+            .filter(d => {
+              const isOnWrapperLine = d.range.start.line === queryWrapperLine;
+              console.log('[QueryValidation] Diag line:', d.range.start.line, 'char:', d.range.start.character, 'wrapper line:', queryWrapperLine);
+              return isOnWrapperLine;
+            })
+            .map(d => ({
+              ...d,
+              range: {
+                start: {
+                  line: 0, // Query is single line wrapped in function
+                  character: Math.max(0, d.range.start.character - funcPrefix)
+                },
+                end: {
+                  line: 0,
+                  character: Math.max(0, d.range.end.character - funcPrefix)
+                }
+              }
+            }));
+
+          console.log('[QueryValidation] Query diagnostics:', queryDiags);
+          setQueryDiagnostics(queryDiags);
+
+          // Also update model diagnostics for errors in model region
+          const modelDiags = diags.filter(d => d.range.start.line < modelLineCount);
+          setDiagnostics(modelDiags);
+          setModelStatus(modelDiags.length === 0 ? 'valid' : 'error');
+        } catch (err) {
+          console.error('Query validation error:', err);
+        }
+      } else {
+        setQueryDiagnostics([]);
+      }
+    }, 300);
+  }, [isConnected, model]);
 
   const handleRunPure = useCallback(async () => {
     setIsRunning(true);
@@ -433,12 +540,26 @@ function App() {
                   {isRunning ? 'Running...' : '▶ Execute Pure'}
                 </button>
               </div>
-              <textarea
-                className="query-input"
-                value={pureQuery}
-                onChange={(e) => setPureQuery(e.target.value)}
-                placeholder="Enter Pure query expression..."
-              />
+              <div className="query-editor-container">
+                <Editor
+                  height="320px"
+                  defaultLanguage="pure"
+                  theme="vs-dark"
+                  value={pureQuery}
+                  onChange={handleQueryChange}
+                  onMount={handleQueryEditorMount}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    tabSize: 4,
+                    wordWrap: 'on',
+                    padding: { top: 8 },
+                  }}
+                />
+              </div>
             </div>
           )}
 

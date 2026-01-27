@@ -256,6 +256,14 @@ body {
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+/* Monaco Editor container for Pure queries */
+.query-editor-container {
+  height: 320px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* SQL textarea (still uses textarea) */
 .query-input {
   min-height: 320px;
   max-height: 400px;
