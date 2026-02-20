@@ -137,6 +137,38 @@ export async function executeSql(
 }
 
 /**
+ * NLQ result from /engine/nlq.
+ */
+export interface NlqResult {
+  success: boolean;
+  rootClass?: string;
+  pureQuery?: string;
+  explanation?: string;
+  queryPlan?: string;
+  retrievedClasses?: string[];
+  latencyMs?: number;
+  error?: string;
+}
+
+/**
+ * Ask AI — Natural Language Query to Pure.
+ * Sends the model code and a natural language question to the NLQ pipeline.
+ */
+export async function askAi(
+  code: string,
+  question: string,
+  domain?: string
+): Promise<NlqResult> {
+  const response = await fetch(`${BASE_URL}/engine/nlq`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, question, domain: domain || undefined }),
+  });
+
+  return response.json();
+}
+
+/**
  * Parse diagnostics from LSP response.
  */
 function parseDiagnostics(response: object | null): Diagnostic[] {

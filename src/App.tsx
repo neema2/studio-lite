@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
-import { didOpen, didChange, executeCode, executeSql, checkHealth, type Diagnostic } from './lspClient';
+import { didOpen, didChange, executeCode, executeSql, askAi, checkHealth, type Diagnostic, type NlqResult } from './lspClient';
 import './App.css';
 
 const DOCUMENT_URI = 'file:///query.pure';
@@ -180,7 +180,7 @@ interface QueryResult {
   error?: string;
 }
 
-type QueryMode = 'pure' | 'sql';
+type QueryMode = 'pure' | 'sql' | 'ai';
 
 function App() {
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -193,6 +193,9 @@ function App() {
   const [modelStatus, setModelStatus] = useState<'idle' | 'valid' | 'error'>('idle');
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [queryDiagnostics, setQueryDiagnostics] = useState<Diagnostic[]>([]);
+  const [nlqQuestion, setNlqQuestion] = useState('');
+  const [nlqResult, setNlqResult] = useState<NlqResult | null>(null);
+  const [nlqStep, setNlqStep] = useState<'idle' | 'retrieving' | 'routing' | 'planning' | 'generating' | 'done' | 'error'>('idle');
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const queryEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -413,6 +416,43 @@ function App() {
     }
   }, [model, sql]);
 
+  const handleAskAi = useCallback(async () => {
+    if (!nlqQuestion.trim()) return;
+    setIsRunning(true);
+    setNlqResult(null);
+    setNlqStep('retrieving');
+
+    // Simulate step progression with timeouts for UX feedback
+    const stepTimer1 = setTimeout(() => setNlqStep('routing'), 800);
+    const stepTimer2 = setTimeout(() => setNlqStep('planning'), 2000);
+    const stepTimer3 = setTimeout(() => setNlqStep('generating'), 3500);
+
+    try {
+      const response = await askAi(model, nlqQuestion);
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+      setNlqResult(response);
+      setNlqStep(response.success ? 'done' : 'error');
+
+      // If successful, copy the generated query to the Pure query editor
+      if (response.success && response.pureQuery) {
+        setPureQuery(response.pureQuery);
+      }
+    } catch (e) {
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+      setNlqResult({
+        success: false,
+        error: e instanceof Error ? e.message : 'Network error'
+      });
+      setNlqStep('error');
+    } finally {
+      setIsRunning(false);
+    }
+  }, [model, nlqQuestion]);
+
   // Parse JSON data for table display
   const parseData = (data: string): object[] => {
     try {
@@ -515,6 +555,12 @@ function App() {
             >
               Raw SQL
             </button>
+            <button
+              className={`query-tab ${queryMode === 'ai' ? 'active ai' : ''}`}
+              onClick={() => setQueryMode('ai')}
+            >
+              ✨ Ask AI
+            </button>
           </div>
 
           {/* Pure Query Panel */}
@@ -592,6 +638,92 @@ function App() {
                 onChange={(e) => setSql(e.target.value)}
                 placeholder="Enter SQL query..."
               />
+            </div>
+          )}
+
+          {/* Ask AI Panel */}
+          {queryMode === 'ai' && (
+            <div className="query-panel ai">
+              <div className="panel-header">
+                <span>Natural Language → Pure Query</span>
+              </div>
+              <div className="nlq-input-row">
+                <input
+                  type="text"
+                  className="nlq-input"
+                  value={nlqQuestion}
+                  onChange={(e) => setNlqQuestion(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAskAi()}
+                  placeholder="e.g. show me total PnL by trader for the AMER equity desk this month"
+                />
+                <button
+                  className="run-button ai"
+                  onClick={handleAskAi}
+                  disabled={isRunning || !isConnected || !nlqQuestion.trim()}
+                >
+                  {isRunning ? 'Thinking...' : '✨ Ask'}
+                </button>
+              </div>
+
+              {/* Step indicators */}
+              {nlqStep !== 'idle' && (
+                <div className="nlq-steps">
+                  <div className={`nlq-step ${nlqStep === 'retrieving' ? 'active' : ['routing','planning','generating','done'].includes(nlqStep) ? 'done' : ''}`}>
+                    <span className="nlq-step-icon">{['routing','planning','generating','done'].includes(nlqStep) ? '✓' : '◌'}</span>
+                    Retrieving classes
+                  </div>
+                  <div className={`nlq-step ${nlqStep === 'routing' ? 'active' : ['planning','generating','done'].includes(nlqStep) ? 'done' : ''}`}>
+                    <span className="nlq-step-icon">{['planning','generating','done'].includes(nlqStep) ? '✓' : '◌'}</span>
+                    Routing to root class
+                  </div>
+                  <div className={`nlq-step ${nlqStep === 'planning' ? 'active' : ['generating','done'].includes(nlqStep) ? 'done' : ''}`}>
+                    <span className="nlq-step-icon">{['generating','done'].includes(nlqStep) ? '✓' : '◌'}</span>
+                    Planning query
+                  </div>
+                  <div className={`nlq-step ${nlqStep === 'generating' ? 'active' : nlqStep === 'done' ? 'done' : ''}`}>
+                    <span className="nlq-step-icon">{nlqStep === 'done' ? '✓' : '◌'}</span>
+                    Generating Pure
+                  </div>
+                </div>
+              )}
+
+              {/* NLQ Result */}
+              {nlqResult && (
+                <div className={`nlq-result ${nlqResult.success ? 'success' : 'error'}`}>
+                  {nlqResult.success ? (
+                    <>
+                      <div className="nlq-result-header">
+                        <span className="nlq-root-class">Root: {nlqResult.rootClass}</span>
+                        <span className="nlq-latency">{nlqResult.latencyMs}ms</span>
+                      </div>
+                      <pre className="nlq-query">{nlqResult.pureQuery}</pre>
+                      {nlqResult.retrievedClasses && nlqResult.retrievedClasses.length > 0 && (
+                        <div className="nlq-meta">
+                          <span className="nlq-meta-label">Context:</span>
+                          {nlqResult.retrievedClasses.map((c, i) => (
+                            <span key={i} className="nlq-class-tag">{c}</span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="nlq-actions">
+                        <button
+                          className="run-button pure small"
+                          onClick={() => {
+                            setQueryMode('pure');
+                            if (nlqResult.pureQuery) setPureQuery(nlqResult.pureQuery);
+                          }}
+                        >
+                          Open in Pure Editor →
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="error">
+                      <strong>Error:</strong> {nlqResult.error}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
