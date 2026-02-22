@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
-import { didOpen, didChange, executeCode, executeSql, askAi, checkHealth, type Diagnostic, type NlqResult } from './lspClient';
+import { didOpen, didChange, executeCode, executeSql, askAi, fetchDiagram, checkHealth, type Diagnostic, type NlqResult, type DiagramData } from './lspClient';
+import DiagramView from './DiagramView';
 import './App.css';
 
 const DOCUMENT_URI = 'file:///query.pure';
@@ -180,7 +181,7 @@ interface QueryResult {
   error?: string;
 }
 
-type QueryMode = 'pure' | 'sql' | 'ai';
+type QueryMode = 'pure' | 'sql' | 'ai' | 'diagram';
 
 function App() {
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -196,6 +197,8 @@ function App() {
   const [nlqQuestion, setNlqQuestion] = useState('');
   const [nlqResult, setNlqResult] = useState<NlqResult | null>(null);
   const [nlqStep, setNlqStep] = useState<'idle' | 'retrieving' | 'routing' | 'planning' | 'generating' | 'done' | 'error'>('idle');
+  const [diagramData, setDiagramData] = useState<DiagramData | null>(null);
+  const [diagramLoading, setDiagramLoading] = useState(false);
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const queryEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -561,6 +564,22 @@ function App() {
             >
               ✨ Ask AI
             </button>
+            <button
+              className={`query-tab ${queryMode === 'diagram' ? 'active diagram' : ''}`}
+              onClick={() => {
+                setQueryMode('diagram');
+                // Fetch diagram data on tab switch
+                if (isConnected && model.trim()) {
+                  setDiagramLoading(true);
+                  fetchDiagram(model)
+                    .then(setDiagramData)
+                    .catch(e => console.error('Diagram error:', e))
+                    .finally(() => setDiagramLoading(false));
+                }
+              }}
+            >
+              ◈ Diagram
+            </button>
           </div>
 
           {/* Pure Query Panel */}
@@ -724,6 +743,13 @@ function App() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Diagram Panel */}
+          {queryMode === 'diagram' && (
+            <div className="query-panel diagram" style={{ flex: 1 }}>
+              <DiagramView data={diagramData} isLoading={diagramLoading} />
             </div>
           )}
 

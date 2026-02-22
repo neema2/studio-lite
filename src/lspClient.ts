@@ -179,6 +179,52 @@ function parseDiagnostics(response: object | null): Diagnostic[] {
 }
 
 /**
+ * Diagram data from /engine/diagram.
+ */
+export interface DiagramClass {
+  id: string;
+  name: string;
+  package: string;
+  stereotype: string;
+  description: string;
+  businessDomain: string;
+  properties: { name: string; type: string; multiplicity: string }[];
+}
+
+export interface DiagramAssociation {
+  name: string;
+  source: string;
+  target: string;
+  sourceProperty: string;
+  targetProperty: string;
+  sourceMult: string;
+  targetMult: string;
+}
+
+export interface DiagramGeneralisation {
+  child: string;
+  parent: string;
+}
+
+export interface DiagramData {
+  classes: DiagramClass[];
+  associations: DiagramAssociation[];
+  generalisations: DiagramGeneralisation[];
+}
+
+/**
+ * Fetch diagram data — classes + associations from Pure source.
+ */
+export async function fetchDiagram(code: string): Promise<DiagramData> {
+  const response = await fetch(`${BASE_URL}/engine/diagram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  return response.json();
+}
+
+/**
  * Check if backend is healthy.
  */
 export async function checkHealth(): Promise<boolean> {
