@@ -1,73 +1,106 @@
-# React + TypeScript + Vite
+# Studio Lite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A lightweight web IDE for [Legend Lite](https://github.com/neema2/legend-lite) — write Pure models, execute queries, ask questions in natural language, and visualize class diagrams.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Pure Editor** — Monaco-based editor with syntax highlighting, LSP diagnostics, and autocompletion
+- **Pure Query Execution** — Write Pure queries and execute them against DuckDB with results in a data grid
+- **Raw SQL** — Execute SQL directly against the runtime's database connection
+- **Ask AI** — Natural language to Pure query (powered by Gemini LLM via the NLQ pipeline)
+- **Class Diagram** — Interactive Cytoscape.js graph of classes, associations, and generalisations
 
-## React Compiler
+## Quick Start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Prerequisites
 
-## Expanding the ESLint configuration
+- **Node.js 18+**
+- **Legend Lite backend** running on `http://localhost:8080` (see below)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 1. Start the Backend
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+In the `legend-lite` repo:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+```bash
+# Without NLQ (engine only)
+mvn exec:java -pl engine \
+  -Dexec.mainClass="org.finos.legend.engine.server.LegendHttpServer"
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# With NLQ (Ask AI feature)
+GEMINI_API_KEY=your-key-here \
+mvn exec:java -pl nlq \
+  -Dexec.mainClass="org.finos.legend.engine.nlq.NlqHttpServer"
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The backend starts on port 8080. The frontend expects this — if you change the port, update `BASE_URL` in `src/lspClient.ts`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 2. Start the Frontend
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
+
+Opens at `http://localhost:5173`. The app shows a connection indicator in the header — green means the backend is reachable.
+
+---
+
+## Tabs
+
+| Tab | Description |
+|-----|-------------|
+| **Pure Query** | Write and execute Pure expressions against the model defined in the left editor |
+| **Raw SQL** | Execute SQL directly against the runtime's DuckDB connection |
+| **Ask AI** | Type a natural language question, get a Pure query back (requires NLQ backend) |
+| **Diagram** | Interactive class diagram extracted from the Pure model |
+
+### Ask AI Workflow
+
+1. Type a question like *"show me total PnL by trader for the AMER equity desk"*
+2. The pipeline runs: Retrieve classes → Route to root → Plan query → Generate Pure
+3. The generated Pure query appears in the result panel
+4. Click **"Open in Pure Editor →"** to copy it to the Pure Query tab and execute it
+
+---
+
+## Project Structure
+
+```
+src/
+  App.tsx          — Main app component with all tabs and query execution
+  App.css          — Full styling (dark theme)
+  lspClient.ts     — HTTP client for all backend endpoints
+  DiagramView.tsx  — Cytoscape.js class diagram renderer
+```
+
+## Backend Endpoints Used
+
+| Endpoint | Used By |
+|----------|---------|
+| `POST /lsp` | Model editor (diagnostics, completions) |
+| `POST /engine/execute` | Pure Query tab |
+| `POST /engine/sql` | Raw SQL tab |
+| `POST /engine/nlq` | Ask AI tab |
+| `POST /engine/diagram` | Diagram tab |
+| `GET /health` | Connection indicator |
+
+## Configuration
+
+The backend URL is configured in `src/lspClient.ts`:
+
+```typescript
+const BASE_URL = 'http://localhost:8080';
+```
+
+---
+
+## Building
+
+```bash
+npm run build    # Production build → dist/
+npm run preview  # Preview production build
+```
+
+## License
+
+Apache 2.0
