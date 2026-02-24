@@ -7,7 +7,7 @@
  * - POST /engine/sql - Execute raw SQL queries
  */
 
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = import.meta.env.VITE_LEGEND_SERVER_URL || 'http://localhost:8080';
 
 export interface Diagnostic {
   range: {
