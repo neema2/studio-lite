@@ -170,9 +170,15 @@ export async function askAi(
 
 /**
  * Parse diagnostics from LSP response.
+ * Handles both single notification and array of notifications (multi-file rebuild).
  */
 function parseDiagnostics(response: object | null): Diagnostic[] {
   if (!response) return [];
+
+  // Multi-file: server returns array of publishDiagnostics notifications
+  if (Array.isArray(response)) {
+    return response.flatMap(r => parseDiagnostics(r));
+  }
 
   const resp = response as { params?: { diagnostics?: Diagnostic[] } };
   return resp.params?.diagnostics || [];
